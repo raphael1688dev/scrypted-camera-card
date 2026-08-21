@@ -7,6 +7,21 @@ All notable changes to this card. Format per
 Entries are added once an implementation is verified — not when it is merely
 implemented. Version and date are filled in at release time.
 
+## [0.5.4] - 2026-08-21
+
+### Added
+
+- **`debug: true` shows the card's internal state whenever the stream is not running healthily.**
+  The flags that decide whether it streams, retries or waits, a count of the recurring events it
+  is stuck in, and a log of the last 40 state transitions with timestamps. A live, healthy stream
+  never carries the overlay — it appears while the card connects, retries, waits, hangs or
+  believes itself off screen, and returns by itself the moment a stream stops.
+
+  It exists because the card can hang on its loading ring with nothing to say, on wall-mounted
+  tablets where no browser console is reachable — and two rounds of diagnosing that from the
+  card's *appearance* were spent before this was built. Off by default, not offered in the visual
+  editor, and preserved by it if set in YAML.
+
 ## [0.5.3] - 2026-08-07
 
 ### Fixed
