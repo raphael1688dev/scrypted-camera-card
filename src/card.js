@@ -127,6 +127,10 @@ const Z_POSTER = 1;
 const Z_SPIN = 2;
 const Z_MSG = 3;
 const Z_BAR = 4;
+// Above the bar, and therefore above the error text too. Deliberate: the overlay only
+// exists when someone asked for it, that someone wants to read it, and the message it
+// covers is traced into the log the overlay is showing - so nothing is actually lost.
+const Z_DEBUG = 5;
 
 const STYLES = `
   ha-card { overflow: hidden; position: relative; background: #000; }
@@ -215,6 +219,28 @@ const STYLES = `
     .bar button.busy { animation: none; opacity: .5; }
   }
   svg { width: 20px; height: 20px; fill: currentColor; }
+    /* Diagnostics only, revealed by \`debug: true\`. Top-left, because the spinner and the
+       version share the top-right corner. pre-wrap so a long reason wraps instead of
+       widening the card. pointer-events:none so it can never swallow a tap meant for the
+       picture underneath - it is a readout, not a control. */
+    .debug {
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      max-width: calc(100% - 8px);
+      max-height: calc(100% - 8px);
+      overflow: hidden;
+      margin: 0;
+      padding: 4px 6px;
+      background: rgba(0, 0, 0, .72);
+      color: #fff;
+      font: 10px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+      border-radius: 4px;
+      pointer-events: none;
+      z-index: ${Z_DEBUG};
+    }
 `;
 
 const ICON_PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
@@ -331,6 +357,17 @@ class ScryptedCameraCard extends HTMLElement {
     // one of those renderings could stand in for it - see _syncVersion().
     this._waiting = false;
     this._stream = null;  // we own the inbound MediaStream, see onTrack
+    // Diagnostics. Both fill whether or not `debug` is set: a failure that has already
+    // happened is exactly when they are wanted, and gating them would guarantee they are
+    // empty then. Rendering is what the flag gates. Trailing underscore rather than
+    // leading, so they stand out as diagnostics when read from a console.
+    this._trace_ = [];
+    // Periodic events are counted here instead of entering the ring, because two
+    // interleaved 5 s / 15 s tracers would flush it in minutes and the transition worth
+    // seeing would be the one pushed out. See "Why the periodic events must stay out of
+    // the ring" in PLAN_F11.
+    this._tally_ = new Map();
+    this._debugTimer = null;
     this._onVisibility = () => this._syncPlayback();
     this._onOnline = () => this._onNetworkBack();
   }
@@ -421,6 +458,11 @@ class ScryptedCameraCard extends HTMLElement {
     // Laptop woke up or wifi came back: don't sit out the remaining backoff.
     window.addEventListener('online', this._onOnline);
     if (this._hass && !this._started) this._start();
+    // Also here, not only in _applyConfig(): Home Assistant can detach and re-attach a
+    // card without calling setConfig() again, and an overlay whose timer died then shows
+    // a frozen snapshot that reads exactly like a live one. The stamp on the flags line
+    // is the second guard against that misreading.
+    this._syncDebug();
   }
 
   disconnectedCallback() {
@@ -456,6 +498,7 @@ class ScryptedCameraCard extends HTMLElement {
           <div class="spin" role="status" aria-label="Loading" hidden></div>
           <span class="version" aria-hidden="true"></span>
           <div class="msg" hidden></div>
+            <pre class="debug" aria-hidden="true" hidden></pre>
           <div class="bar">
             <button class="toggle" title="Play/Stop">${ICON_PLAY}</button>
             <span class="label"></span>
@@ -476,6 +519,7 @@ class ScryptedCameraCard extends HTMLElement {
     this._speaker = this.shadowRoot.querySelector('.speaker');
     this._label = this.shadowRoot.querySelector('.label');
     this._version = this.shadowRoot.querySelector('.version');
+    this._debug = this.shadowRoot.querySelector('.debug');
 
     this._toggle.addEventListener('click', () => this._onToggle());
     this._mic.addEventListener('click', () => this._onMic());
@@ -496,6 +540,7 @@ class ScryptedCameraCard extends HTMLElement {
     // collapsing while a new one is half typed.
     this._wrap.style.aspectRatio = this._config.aspect_ratio;
     this._label.textContent = this._config.name || '';
+    this._syncDebug();
   }
 
   /**
@@ -610,6 +655,103 @@ class ScryptedCameraCard extends HTMLElement {
     // of which will fix itself. Those have to speak on the first attempt.
     if (!reason || (this._outageFromLive && !this._escalated)) { this._status(''); return; }
     this._status(delay ? `${reason} - retrying in ${Math.round(delay / 1000)}s` : reason);
+  }
+
+  /**
+   * Brings the overlay's timer in line with the config. Called from _applyConfig() and
+   * from connectedCallback(), because neither alone covers every way a card arrives on
+   * screen - see the comment at the second call site.
+   *
+   * Tolerates either call order. Nothing guarantees setConfig() runs before the element
+   * connects - this file already handles both orders for `hass` explicitly - so a call
+   * arriving before _config and the shadow DOM exist must be a no-op, not a TypeError.
+   * Whichever lifecycle call runs second completes the setup.
+   */
+  _syncDebug() {
+    if (!this._config || !this._debug) return;
+    if (this._debugTimer) { clearInterval(this._debugTimer); this._debugTimer = null; }
+    // Visibility is not written here. It depends on _live and _waiting, which change
+    // every time the stream starts or stops, so the per-second tick in _renderDebug()
+    // is its single writer - same rule, same reason as _syncVersion(): one property
+    // written from two sites is one property that ends up saying two things. The call
+    // below covers the debug-off case too: _renderDebug() hides and returns.
+    this._renderDebug();
+    if (this._config.debug !== true) return;
+    // Only a connected element gets a timer. setConfig() also runs on elements Home
+    // Assistant builds and never attaches (editor previews); those never receive a
+    // disconnectedCallback() either, so a timer started for them would tick for the
+    // life of the page. The connectedCallback() call site covers the mirror case of a
+    // config applied before attach.
+    if (!this.isConnected) return;
+    this._debugTimer = setInterval(() => this._renderDebug(), 1000);
+  }
+
+  /**
+   * The card's own state, on the card. Written because the failure it exists to diagnose
+   * happens on a wall-mounted tablet with no developer tools, and two rounds of inference
+   * from what the card *looks* like were spent before this was built.
+   *
+   * Reads card state and never writes it - the only things written here are the
+   * overlay's own visibility and text. Anything that changed what it measures would be
+   * worse than having no instrument at all.
+   */
+  async _renderDebug() {
+    // The single writer of the overlay's visibility (same rule as _syncVersion()).
+    // Shown only when there is something to diagnose: no running picture, a wait the
+    // user can already see as the spinner, or a card that believes it is off screen.
+    // A live, healthy stream never carries a wall of text - and when the stream dies,
+    // the next tick brings the overlay back without anyone touching the config.
+    //
+    // The _isVisible() clause is the hypothesis this overlay exists to test, turned
+    // into a detector: on a card that is genuinely hidden it shows the overlay to
+    // nobody, but on a card that wrongly believes it is hidden - frozen picture,
+    // _live=true, watchdog bailing before its _busy(true) - it is the only clause
+    // that still reveals the instrument.
+    const show = this._config.debug === true
+      && (!this._live || this._waiting || !this._isVisible());
+    this._debug.hidden = !show;
+    if (!show) return;
+    const b = (v) => (v ? 1 : 0);
+    // The stamp is not decoration: it is what tells a frozen overlay from a live one, and
+    // a frozen `vis=0` misread as live would send the next round of work in exactly the
+    // wrong direction.
+    const now = new Date();
+    const at = `${String(now.getHours()).padStart(2, '0')}:`
+      + `${String(now.getMinutes()).padStart(2, '0')}:`
+      + `${String(now.getSeconds()).padStart(2, '0')}`;
+    // Every flag that gates a self-healing path, plus the three that say what the card
+    // thinks it has. `vis` and `hid` are separate on purpose: _isVisible() is their AND,
+    // and which half is false is the difference between an observer that never fired and
+    // a backgrounded tab.
+    const flags = [
+      `vis=${b(this._visible)}`,
+      `hid=${b(document.hidden)}`,
+      `sess=${b(this._session)}`,
+      `live=${b(this._live)}`,
+      `busy=${b(this._waiting)}`,
+      `conn=${b(this._connecting)}`,
+      `dev=${b(this._device)}`,
+      `dead=${b(this._clientDead)}`,
+      `stop=${b(this._stopped)}`,
+      `want=${b(this._wantStream)}`,
+      `retries=${this._retries}`,
+      `pend=${b(this._pendingRetry)}`,
+      `timer=${b(this._retryTimer)}`,
+      `esc=${b(this._escalated)}`,
+    ].join(' ');
+    let peer = 'no session';
+    if (this._session) {
+      const pc = this._session.pc;
+      const frames = await this._session.framesDecoded().catch(() => 'err');
+      peer = `pc=${pc ? pc.connectionState : '-'} ice=${pc ? pc.iceConnectionState : '-'}`
+        + ` frames=${frames === null ? 'null' : frames}`;
+    }
+    // The tallies answer the hypothesis on their own: a rising skipHidden or rearm on a
+    // card that is plainly on screen is the finding, without needing the ring at all.
+    const tally = [...this._tally_.entries()]
+      .map(([k, v]) => `${k}=${v.n}@${v.at}`).join(' ') || 'none';
+    this._debug.textContent = `${at} ${flags}\n${peer} route=${this._route || '-'}\n`
+      + `tally: ${tally}\n${this._trace_.join('\n')}`;
   }
 
   // --- snapshot poster ------------------------------------------------------
@@ -2003,6 +2145,7 @@ class ScryptedCameraCard extends HTMLElement {
   // --- teardown -----------------------------------------------------------
 
   async _teardown() {
+    if (this._debugTimer) { clearInterval(this._debugTimer); this._debugTimer = null; }
     if (this._observer) { this._observer.disconnect(); this._observer = null; }
     document.removeEventListener('visibilitychange', this._onVisibility);
     window.removeEventListener('online', this._onOnline);
