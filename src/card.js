@@ -451,6 +451,7 @@ class ScryptedCameraCard extends HTMLElement {
     // holding several live streams at once.
     this._observer = new IntersectionObserver((entries) => {
       this._visible = entries.some((e) => e.isIntersecting);
+      this._trace(`visible=${this._visible ? 1 : 0}`);
       this._syncPlayback();
     }, { threshold: 0.01 });
     this._observer.observe(this);
@@ -934,18 +935,23 @@ class ScryptedCameraCard extends HTMLElement {
   }
 
   async _start() {
-    if (this._connecting) return;
+    if (this._connecting) {
+      this._trace('start: skipped, already connecting');
+      return;
+    }
     // Both are card configuration and neither can heal by retrying, so they are shown
     // and nothing is scheduled. Destination first, arbitrarily but stably: a config can
     // carry both mistakes and only one sentence fits on screen.
     const configError = this._destinationError || this._connectionError;
     if (configError) {
+      this._trace(`start: config error: ${configError}`);
       this._started = true;
       this._busy(false);
       this._status(configError);
       return;
     }
     this._connecting = true;
+    this._trace('start: begin');
     this._started = true;
     // Bumped before _dropClient(), because the disposal below is exactly what
     // _dropClient() cannot reach - see _ingressBaseUrl().
@@ -1118,6 +1124,7 @@ class ScryptedCameraCard extends HTMLElement {
         this._syncStatus();
       }
     } catch (err) {
+      this._trace(`start failed: ${err.message || err}`);
       // Home Assistant refused the call, so retrying it will be refused too. Routed
       // exactly like the destination refusal above - shown, and not through
       // _scheduleRetry() - because that is what the loop was: every non-admin on the
@@ -1479,8 +1486,15 @@ class ScryptedCameraCard extends HTMLElement {
 
   async _play() {
     this._wantStream = true;
-    if (this._session) return;
-    if (!this._device) return; // _start() failed; its message is on screen
+    if (this._session) {
+      this._trace('play: skipped, session exists');
+      return;
+    }
+    if (!this._device) {
+      // _start() failed; its message is on screen
+      this._trace('play: skipped, no device');
+      return;
+    }
     this._busy(true);
     // Same reason as in _start(): _retry() reaches this method too, and a bare
     // _status('') here would wipe an escalated message once per retry cycle.
@@ -1629,6 +1643,7 @@ class ScryptedCameraCard extends HTMLElement {
    * true, so it is made true here.
    */
   async _stop({ resetOverlay = true, awaitEnd = true } = {}) {
+    this._trace(`stop: overlay=${resetOverlay ? 1 : 0}`);
     for (const clear of this._streamTimers.splice(0)) clear();
     this._clearTimer('_graceTimer');
     this._stableTimer = false;
@@ -1736,6 +1751,7 @@ class ScryptedCameraCard extends HTMLElement {
 
   _onPeerState(state, session) {
     if (this._session !== session) return; // state from a superseded attempt
+    this._trace(`peer: ${state}`);
 
     if (state === 'connected') {
       this._showStop = true;
@@ -1826,7 +1842,8 @@ class ScryptedCameraCard extends HTMLElement {
     const arm = () => {
       deadline = setTimeout(() => {
         if (this._session !== session || this._live) return;
-        if (!this._isVisible()) { arm(); return; }
+        if (!this._isVisible()) { this._tally('rearmHidden'); arm(); return; }
+        this._trace('deadline: no video, recovering');
         this._recover('the camera connected but sent no video');
       }, WATCHDOG_STALL);
     };
@@ -1843,6 +1860,7 @@ class ScryptedCameraCard extends HTMLElement {
       if (this._session !== session) { clearInterval(id); return; }
       if (!frames) return; // null: no inbound video report yet, 0: nothing decoded
       clearInterval(id);
+      this._trace('first frame');
       this._live = true;
       // Frames are moving again, so the outage that escalated is genuinely over -
       // and the poster it was hiding behind is behind a live picture now. The reason
@@ -1872,7 +1890,7 @@ class ScryptedCameraCard extends HTMLElement {
       const session = this._session;
       if (!session) return;
       // Playback is deliberately paused off-screen, so no frames is expected.
-      if (!this._isVisible()) { moved = Date.now(); return; }
+      if (!this._isVisible()) { this._tally('skipHidden'); moved = Date.now(); return; }
       const current = await session.framesDecoded().catch(() => null);
       if (this._session !== session) return;
       if (current === null) {
@@ -1896,13 +1914,20 @@ class ScryptedCameraCard extends HTMLElement {
       // like a working stream. connectionState stays 'connected' throughout, so
       // _onPeerState never runs and nothing else would speak up.
       this._busy(true);
-      if (Date.now() - moved > WATCHDOG_STALL) this._recover('stream stalled');
+      if (Date.now() - moved > WATCHDOG_STALL) {
+        this._trace('watchdog: stall');
+        this._recover('stream stalled');
+      }
     });
   }
 
   /** Tear the stream down and queue a fresh attempt. */
   async _recover(reason) {
-    if (this._stopped || !this.isConnected || this._recovering) return;
+    this._trace(`recover: ${reason}`);
+    if (this._stopped || !this.isConnected || this._recovering) {
+      this._trace('recover: suppressed');
+      return;
+    }
     this._recovering = true;
     try {
       // Read before _stop() clears _live, and gated on it rather than on merely
@@ -1927,13 +1952,18 @@ class ScryptedCameraCard extends HTMLElement {
     // retry, and the countdown below for one that will. Both go through the same
     // renderer, so the escalation rule cannot end up applied to only one of them.
     this._syncStatus();
-    if (this._stopped || !this.isConnected) { this._busy(false); return; }
+    if (this._stopped || !this.isConnected) {
+      this._trace('retry: not scheduled, stopped or detached');
+      this._busy(false);
+      return;
+    }
     // The first retry of an outage goes immediately; the backoff picks up from the
     // second, with the same sequence it had before - hence the -1 in the exponent.
     const delay = this._retries === 0
       ? RETRY_FIRST
       : Math.min(RETRY_MAX, RETRY_BASE * (2 ** (this._retries - 1)));
     this._retries += 1;
+    this._trace(`retry #${this._retries} in ${Math.round(delay / 1000)}s: ${reason}`);
     // The threshold is checked in the one place the count changes. Mind the
     // off-by-one and do not "simplify" it away: _retries counts calls to this
     // method, and the first of those is the failure that *opened* the outage, not a
@@ -1968,6 +1998,7 @@ class ScryptedCameraCard extends HTMLElement {
    * state today, so declining to arm its timer declines all of it.
    */
   _latchResolver(reason) {
+    this._trace(`resolver latched: ${reason}`);
     this._outageReason = String(reason);
     // Without this the card can end up silent. _syncStatus() returns without writing
     // while `_outageFromLive && !_escalated`, and _escalated is otherwise set only by
@@ -1992,14 +2023,22 @@ class ScryptedCameraCard extends HTMLElement {
 
   async _retry() {
     this._retryTimer = null;
-    if (this._stopped || !this.isConnected) return;
+    if (this._stopped || !this.isConnected) {
+      this._trace('retry: skipped, stopped or detached');
+      return;
+    }
     // Reconnecting behind a hidden dashboard burns requests for a picture
     // nobody sees; _syncPlayback() picks this up the moment the card is back.
-    if (!this._isVisible()) { this._pendingRetry = true; return; }
+    if (!this._isVisible()) {
+      this._trace('retry: deferred, card hidden');
+      this._pendingRetry = true;
+      return;
+    }
     this._pendingRetry = false;
     this._busy(true);
     // Drops the countdown, keeps the reason: the wait is over, the outage is not.
     this._syncStatus();
+    this._trace(`retry: ${!this._client || this._clientDead ? 'start' : 'play'}`);
     if (!this._client || this._clientDead) await this._start();
     else await this._play();
   }
@@ -2104,6 +2143,7 @@ class ScryptedCameraCard extends HTMLElement {
   }
 
   async _onToggle() {
+    this._trace('toggle pressed');
     // A queued retry counts as running: the button cancels it instead of
     // starting a second attempt next to it.
     if (this._session || this._retryTimer || this._pendingRetry) {
