@@ -161,6 +161,8 @@ device: "121"          # Scrypted device id (as in /#/device/121) or its name
 name: Eingang          # optional, shown in the control bar
 aspect_ratio: 16 / 9   # optional, any CSS aspect-ratio value
 autoplay: false        # optional, default false - see below
+# debug: true                # optional - shows the card's internal state while it is
+                             # not streaming, see below
 # destination: low-resolution  # optional, see below
 # source: Scrypted           # optional - only when the default does not fit, see below
 # username / password        # add-on route only, see below
@@ -224,6 +226,30 @@ Two things to know before you do:
 - **They do not restrict Scrypted itself.** They scope what this card displays. A Home
   Assistant user who can load the card can also open Scrypted's own interface through
   the ingress URL, whatever the card authenticated as. See _Known risks_.
+
+**`debug`** draws the card's own state over the picture: the flags that decide whether it
+streams, retries or waits, a count of the recurring events it is caught in, and a log of the last
+40 state transitions with timestamps. It exists because the failures worth reporting happen on
+wall-mounted tablets where no browser console is reachable, and guessing from what the card
+*looks* like has a poor record.
+
+It shows only while there is something to diagnose — while the card is connecting, retrying,
+stopped, visibly waiting, or convinced it is not on screen. A live, healthy stream never carries
+it, and it comes back by itself within a second of the stream stopping, so it can be left
+switched on across the failure you are trying to catch. If it appears on top of a frozen
+picture, that is not a glitch — the card is showing you why, and the flags line says which case
+it is: `vis=0` means the card believes it is off screen while you are looking at it; `busy=1`
+with `vis=1` means the watchdog has noticed the frames stopped moving.
+
+Set it, reproduce whatever went wrong, read the overlay. The first line is stamped with the time
+it was written — if that stamp is old, the card was detached and the numbers below it are stale.
+The `tally:` line is usually the answer: a rising `skipHidden` or `rearmHidden` on a card you can
+plainly see means the card believes it is off screen, which disables everything that would
+otherwise recover it.
+
+It is not offered in the visual editor, deliberately: it is an instrument, not a feature, and a
+switch that turns a camera into a wall of text is one nobody should find by accident. The editor
+does preserve it — an unknown key survives a visit — so setting it in YAML sticks.
 
 ### Why there is no `base_url`
 
