@@ -754,6 +754,55 @@ class ScryptedCameraCard extends HTMLElement {
       + `tally: ${tally}\n${this._trace_.join('\n')}`;
   }
 
+  /**
+   * One line in the diagnostic log, for a transition that happens *once*. The calls are
+   * what make an intermittent failure readable after the fact, because by the time anyone
+   * looks at the card the transition that broke it is minutes gone.
+   *
+   * Anything that repeats on a timer belongs in _tally() instead, never here - two
+   * interleaved periodic sources would flush this ring within minutes and push out the
+   * one entry worth having. Consecutive repeats still collapse, which covers bursts from
+   * a single source, but that is not what protects the ring.
+   *
+   * Never throws and never touches card state: it is read by the instrument and must not
+   * become part of what is being measured.
+   */
+  _trace(text) {
+    const last = this._trace_[this._trace_.length - 1];
+    if (last && last.text === text) {
+      last.n += 1;
+      return;
+    }
+    // Wall clock, not an offset since load: the Human correlates these with "it hung
+    // while I was looking at it", which is an event on a clock.
+    const now = new Date();
+    const at = `${String(now.getHours()).padStart(2, '0')}:`
+      + `${String(now.getMinutes()).padStart(2, '0')}:`
+      + `${String(now.getSeconds()).padStart(2, '0')}`;
+    this._trace_.push({
+      text,
+      at,
+      n: 1,
+      toString() { return `${this.at} ${this.text}${this.n > 1 ? ` ×${this.n}` : ''}`; },
+    });
+    if (this._trace_.length > 40) this._trace_.shift();
+  }
+
+  /**
+   * A recurring event, counted rather than logged. One slot per name, holding how many
+   * times it happened and when it last did, so a loop that runs for an hour costs one
+   * line and cannot displace anything.
+   */
+  _tally(name) {
+    const now = new Date();
+    const at = `${String(now.getHours()).padStart(2, '0')}:`
+      + `${String(now.getMinutes()).padStart(2, '0')}:`
+      + `${String(now.getSeconds()).padStart(2, '0')}`;
+    const entry = this._tally_.get(name);
+    if (entry) { entry.n += 1; entry.at = at; return; }
+    this._tally_.set(name, { n: 1, at });
+  }
+
   // --- snapshot poster ------------------------------------------------------
 
   /**
