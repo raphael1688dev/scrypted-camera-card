@@ -228,10 +228,10 @@ Two things to know before you do:
   the ingress URL, whatever the card authenticated as. See _Known risks_.
 
 **`debug`** draws the card's own state over the picture: the flags that decide whether it
-streams, retries or waits, a count of the recurring events it is caught in, and a log of the last
-40 state transitions with timestamps. It exists because the failures worth reporting happen on
-wall-mounted tablets where no browser console is reachable, and guessing from what the card
-*looks* like has a poor record.
+streams, retries or waits, a count of the recurring events it is caught in, and a log of the
+last 40 state transitions with timestamps, newest first. It exists because the failures worth
+reporting happen on wall-mounted tablets where no browser console is reachable, and guessing
+from what the card *looks* like has a poor record.
 
 It shows only while there is something to diagnose — while the card is connecting, retrying,
 stopped, visibly waiting, or convinced it is not on screen. A live, healthy stream never carries

@@ -770,8 +770,15 @@ class ScryptedCameraCard extends HTMLElement {
     // card that is plainly on screen is the finding, without needing the ring at all.
     const tally = [...this._tally_.entries()]
       .map(([k, v]) => `${k}=${v.n}@${v.at}`).join(' ') || 'none';
+    // Newest first, log-tail style. The overlay clips at the card's bottom edge
+    // (max-height + overflow: hidden - deliberate, so a full ring cannot push the
+    // layout around), so rendered oldest-first a long retry chain pushes exactly
+    // the newest entries - the ones a photograph is taken for - under the clip.
+    // Found on the first real capture: the photo's ring ended 78 seconds before
+    // its own live stamp. The per-line stamps keep the chronology readable.
+    const trace = [...this._trace_].reverse().join('\n');
     this._debug.textContent = `${at} ${flags}\n${peer} route=${this._route || '-'}\n`
-      + `tally: ${tally}\n${this._trace_.join('\n')}`;
+      + `tally: ${tally}\n${trace}`;
   }
 
   /**
