@@ -41,6 +41,25 @@ const RETRY_MAX = 30000;          // backoff ceiling
 // have announced itself. Deliberately a count and not a clock - a time-based
 // backstop was proposed and declined, see PLAN_F03 "Accepted deviation".
 const ESCALATE_AFTER_RETRIES = 3;
+// Every Nth consecutive retry abandons the existing client and reconnects from
+// scratch: _retry() takes the _start() branch, and _start() opens with
+// _dropClient(). That is the recovery a page refresh performs, minus the person
+// walking to the tablet. Exists because of a recorded outage (PLAN_F12): 24
+// consecutive `retry: play` attempts each reached `peer: connected` and then no
+// video, while a page refresh streamed immediately - whether the reused client
+// was the cause or the outage had simply ended could not be told apart from the
+// trace.
+//
+// Two regimes, both intended. While the server answers, a rebuild succeeds and
+// restores _client, so the four attempts between rebuilds reuse it - one heavier
+// attempt per five. Once _start() itself fails, _dropClient() has left _client
+// null and every following attempt matches the pre-existing !this._client
+// condition: a fresh start per backoff period, which is the loop the dead-client
+// path (_clientDead) already runs today. This constant only decides when a
+// *live* client is given up on. 5, not lower: attempts 1-4 keep the cheap path
+// for outages that heal quickly, and ESCALATE_AFTER_RETRIES has already put
+// words on screen by then.
+const REBUILD_AFTER_RETRIES = 5;
 const DISCONNECT_GRACE = 5000;    // ICE usually heals itself, give it a moment
 const STABLE_AFTER = 30000;       // a connection this old counts as healthy
 const WATCHDOG_INTERVAL = 5000;
@@ -2038,8 +2057,30 @@ class ScryptedCameraCard extends HTMLElement {
     this._busy(true);
     // Drops the countdown, keeps the reason: the wait is over, the outage is not.
     this._syncStatus();
-    this._trace(`retry: ${!this._client || this._clientDead ? 'start' : 'play'}`);
-    if (!this._client || this._clientDead) await this._start();
+    // Every REBUILD_AFTER_RETRIES-th attempt gives up on a *usable* client and goes
+    // through _start(), which opens with _dropClient(): the fresh-client recovery
+    // a page refresh performs - see the constant, including why a failed rebuild
+    // leaves the loop on the start branch. _retries survives until STABLE_AFTER
+    // declares the stream healthy, so this fires only inside a sustained outage;
+    // the `> 0` guard keeps _onNetworkBack()'s immediate retry (which runs with
+    // _retries reset to 0) on the cheap path. _wantStream is still true here -
+    // only the stop button, the constructor and a first setConfig() write it
+    // false - so _start() carries on into _play() and the rebuilt client actually
+    // streams. The label: `start (rebuild)` marks the deliberate abandonment of a
+    // usable client; the plain `start` means there was none - absent, dead, or
+    // missing its device - exactly what it means today.
+    const rebuild = !!this._client && !!this._device && !this._clientDead
+      && this._retries > 0 && this._retries % REBUILD_AFTER_RETRIES === 0;
+    // !this._device mirrors the play button's own start-or-play condition: _start()
+    // assigns _client before _device, so a throw between the two assignments -
+    // device not listed yet, no RTCSignalingChannel, an unanswered stream-options
+    // probe - leaves a client that _play() cannot use. Without this clause the
+    // next attempt would take the play branch and end at `play: skipped, no
+    // device` with no timer armed: a silent hang. Reachable today through the
+    // dead-client path; the rebuild cadence makes the window matter.
+    const start = !this._client || !this._device || this._clientDead || rebuild;
+    this._trace(`retry: ${start ? (rebuild ? 'start (rebuild)' : 'start') : 'play'}`);
+    if (start) await this._start();
     else await this._play();
   }
 
