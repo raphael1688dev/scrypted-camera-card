@@ -1116,15 +1116,25 @@ class ScryptedCameraCard extends HTMLElement {
       // not a reliable test of whether a destination can be honoured - see Step 2.3
       // in PLAN_F04. It is only used here to avoid calling a method that is absent.
       this._hasVideoCamera = device.interfaces.includes('VideoCamera');
-      if (this._destination && !(await this._canPickStream(device))) {
-        // Deliberately refuse rather than quietly stream the default: a card that
-        // ignores its own configuration is worse than one that says it cannot honour
-        // it. Not routed through _scheduleRetry - this cannot heal by retrying.
-        this._destinationError =
-          `${device.name} offers no selectable stream - remove "destination" from the card config`;
-        this._busy(false);
-        this._status(this._destinationError);
-        return;
+      if (this._destination) {
+        const pick = await this._canPickStream(device);
+        // "Did not answer" is an outage wearing the probe's clothes. Throwing
+        // hands it to the catch below and from there to _scheduleRetry() - the
+        // ordinary cycle. Writing _destinationError here instead would latch a
+        // permanent, non-retrying config error for what may be a sick server.
+        if (pick === null) {
+          throw new Error(`${device.name} did not answer getVideoStreamOptions`);
+        }
+        if (!pick) {
+          // Deliberately refuse rather than quietly stream the default: a card that
+          // ignores its own configuration is worse than one that says it cannot honour
+          // it. Not routed through _scheduleRetry - this cannot heal by retrying.
+          this._destinationError =
+            `${device.name} offers no selectable stream - remove "destination" from the card config`;
+          this._busy(false);
+          this._status(this._destinationError);
+          return;
+        }
       }
       this._device = device;
       // Not awaited: the poster is decoration and must never delay the stream.
@@ -1586,10 +1596,22 @@ class ScryptedCameraCard extends HTMLElement {
    */
   async _canPickStream(device) {
     if (!this._hasVideoCamera) return false;
+    // Three answers, not two. `null` means "the device did not answer" - the RPC
+    // timed out or threw - and the caller must treat that as an outage to retry,
+    // not as a verdict on the config. Before this distinction existed, a
+    // sick-but-reachable server timing out this probe was read as "offers no
+    // selectable stream", which latched the permanent _destinationError and killed
+    // the retry loop for the rest of the page's life - found in PLAN_F12's review
+    // before the rebuild branch made it reachable. `false` keeps meaning "the
+    // device answered and offers nothing usable". A device that resolves
+    // undefined is indistinguishable from a timeout under withTimeout and lands
+    // on `null` too: retrying an ambiguous answer is recoverable, a wrongly
+    // latched config error is not.
     const options = await withTimeout(
-      Promise.resolve(device.getVideoStreamOptions()).catch(() => null),
+      Promise.resolve(device.getVideoStreamOptions()).catch(() => undefined),
       RPC_TIMEOUT,
     );
+    if (options === undefined) return null;
     if (!Array.isArray(options) || !options.length) return false;
     return !(options.length === 1 && options[0] && options[0].id === 'webrtc');
   }
