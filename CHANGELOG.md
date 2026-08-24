@@ -7,6 +7,35 @@ All notable changes to this card. Format per
 Entries are added once an implementation is verified — not when it is merely
 implemented. Version and date are filled in at release time.
 
+## [0.5.5] - 2026-08-24
+
+### Added
+
+- **A sustained outage now rebuilds the connection from scratch every fifth retry.** Before,
+  every retry reused the existing Scrypted client for as long as it did not report itself dead —
+  a recorded 15-minute outage ran 24 identical attempts that each connected and then received no
+  video, while a page refresh (a fresh client) streamed immediately. Every fifth attempt now
+  performs exactly what that refresh performs (and once the server stops answering entirely,
+  every attempt does — the rate the dead-client loop always ran at). If the reused client is
+  ever the cause, the card heals itself within five backoff periods; either way the debug trace
+  now tells the two cases apart.
+
+### Fixed
+
+- **A server that stops answering can no longer turn an outage into a permanent config error on
+  cards with `destination:` set.** The stream-options probe now distinguishes "the device did
+  not answer" — retried like any outage — from "the device answered and offers nothing usable",
+  which stays the config error it always was.
+- **A reconnect whose device lookup failed no longer stalls the retry loop silently.** When a
+  fresh connect got its client up but threw before the device was resolved, the next retry
+  reused that half-built client, found no device, and returned without arming another attempt —
+  a spinner nothing recovers from. The retry now chooses start-or-play by the same rule as the
+  play button and rebuilds instead.
+- **The debug overlay renders its trace newest-first.** Rendered oldest-first, a long retry
+  chain pushed the newest entries — the ones a photograph is taken for — below the overlay's
+  clipped bottom edge. The first real field capture lost the 78 most recent seconds to exactly
+  that.
+
 ## [0.5.4] - 2026-08-21
 
 ### Added
