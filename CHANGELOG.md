@@ -7,6 +7,28 @@ All notable changes to this card. Format per
 Entries are added once an implementation is verified — not when it is merely
 implemented. Version and date are filled in at release time.
 
+## [0.5.9] - 2026-11-10
+
+### Fixed
+
+- **Leaving the screen now stops the stream.** Off screen (another view or dashboard,
+  scrolled out of sight, another browser tab, the app in the background) the card used to pause
+  only its local playback and keep the session open indefinitely, so the camera stream and its
+  traffic kept running. With the new `stop_when_hidden` option (default `true`) it stops exactly
+  like the stop button; coming back shows the play button, and `autoplay: true` cards start
+  again. Fullscreen does not count as leaving. `stop_when_hidden: false` restores the old
+  behaviour. Also in the visual editor. Verified in a local test page with a simulated session;
+  not yet checked against a live camera.
+
+### Changed
+
+- **Home Assistant 2026.11 review.** `getGridOptions()` for the sections view (full width by
+  default, resizable down to 3 columns, height follows `aspect_ratio`); fonts use
+  `--ha-font-family-body` instead of the legacy `--paper-font-body1` variable; the card picker
+  entry has a `documentationURL`; the README installs through the 2026.11 Marketplace
+  (`/local/community/`), with HACS kept for earlier versions. Also includes the clearer
+  `aspect_ratio` docs and editor helper text.
+
 ## [0.5.8] - 2026-11-10
 
 ### Changed

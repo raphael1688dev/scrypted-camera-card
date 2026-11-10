@@ -1,6 +1,6 @@
 {
   "name": "ha-scrypted-camera-card",
-  "version": "0.5.8",
+  "version": "0.5.9",
   "private": true,
   "type": "module",
   "description": "Home Assistant Lovelace card streaming Scrypted cameras over WebRTC, with two-way audio",
