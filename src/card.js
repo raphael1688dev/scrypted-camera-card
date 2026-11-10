@@ -606,6 +606,8 @@ class ScryptedCameraCard extends HTMLElement {
     this._wrap.style.aspectRatio = this._config.aspect_ratio;
     // Only `contain` changes anything; any other value keeps the default crop-to-fill.
     this._card.classList.toggle('fit-contain', this._config.fit === 'contain');
+    // The version label depends on `debug`, which an edit can flip.
+    this._syncVersion();
     this._label.textContent = this._config.name || '';
     this._syncDebug();
   }
@@ -697,7 +699,10 @@ class ScryptedCameraCard extends HTMLElement {
    */
   _syncVersion() {
     this._version.textContent = this._route ? `v${VERSION} · ${this._route}` : `v${VERSION}`;
-    this._version.hidden = this._showStop || this._waiting;
+    // Only with `debug: true`: on a normal dashboard the label read as a watermark over the
+    // snapshot. The debug overlay is where diagnostics already live, so the version joins it.
+    const debug = !!this._config && this._config.debug === true;
+    this._version.hidden = !debug || this._showStop || this._waiting;
   }
 
   /**

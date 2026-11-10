@@ -27,8 +27,8 @@ So one of these has to be true, and there is nothing to configure for either:
   sees goes through the account that integration is configured with, so `username` /
   `password` are refused on this route — see _Card config_.
 
-The card shows which route it took next to the version number, bottom right, while it is
-paused: `v0.5.0 · integration` or `· ingress`.
+With `debug: true`, the card shows which route it took next to the version number, top
+right, while it is paused: `v0.5.0 · integration` or `· ingress`.
 
 **Administrator rights are *not* required** on either route. They used to be, and this is the
 point people carry over from older versions: the card no longer asks Home Assistant for the
@@ -66,9 +66,10 @@ and a hand-written entry gets none — so without it a browser or the Home Assis
 service worker will keep serving the previous bundle after a HACS update, which looks
 exactly like the update not having worked. Bump the value whenever you update.
 
-**To check which version a dashboard is actually running**, look at the top right corner
-of the card while it is not streaming: the version is printed there. That is the quickest
-way to tell a failed update from a cached one.
+**To check which version a dashboard is actually running**, set `debug: true` and look at
+the top right corner of the card while it is not streaming: the version is printed there.
+That is the quickest way to tell a failed update from a cached one. Without `debug` the
+label is hidden, so it does not sit over the snapshot like a watermark.
 
 ### Manual
 
