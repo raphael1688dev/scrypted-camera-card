@@ -187,13 +187,13 @@ const STYLES = `
      ring is the only sign that the picture is not live (docs/limitations.md), and it
      and a starting intercom can be true at once. */
   .bar button.busy { animation: pulse 1.2s ease-in-out infinite; }
-  .label { font: 500 12px/1 var(--paper-font-body1_-_font-family, sans-serif);
+  .label { font: 500 12px/1 var(--ha-font-family-body, sans-serif);
            letter-spacing: .04em; text-transform: uppercase; opacity: .85; }
   .spacer { flex: 1; }
   .msg { position: absolute; inset: 0; z-index: ${Z_MSG}; pointer-events: none;
          display: flex; align-items: center;
          justify-content: center; padding: 12px; text-align: center;
-         color: #888; font: 13px/1.5 var(--paper-font-body1_-_font-family, sans-serif); }
+         color: #888; font: 13px/1.5 var(--ha-font-family-body, sans-serif); }
   .msg[hidden] { display: none; }
   /* Top right, over the picture, not inside the play button: the button has to
      stay a recognisable stop button so a 30 s backoff can be cut short by pressing
@@ -227,7 +227,7 @@ const STYLES = `
      No [hidden] rule of its own - that exists for .bar button because all: unset kills
      the UA one; nothing here sets display, so hidden still works. */
   .version { position: absolute; top: 8px; right: 8px; z-index: ${Z_SPIN};
-             font: 500 10px/1 var(--paper-font-body1_-_font-family, sans-serif);
+             font: 500 10px/1 var(--ha-font-family-body, sans-serif);
              letter-spacing: .04em; opacity: .45;
              filter: drop-shadow(0 1px 2px rgba(0,0,0,.8)); }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -337,6 +337,12 @@ class ScryptedCameraCard extends HTMLElement {
     super();
     this._started = false;
     this._visible = false;
+    // Whether the IntersectionObserver has reported yet; see _shouldStopWhenHidden().
+    this._visibilityKnown = false;
+    // The stream was stopped because the card left the screen (not by the user), and a
+    // stop of that kind is in flight. See _stopWhileHidden().
+    this._hiddenStopped = false;
+    this._hiddenStopping = false;
     this._client = null;
     this._clientDead = false;
     this._session = null;
@@ -489,12 +495,19 @@ class ScryptedCameraCard extends HTMLElement {
     return 4;
   }
 
+  // Sections view: full width by default, resizable down to a quarter; the height follows
+  // `aspect_ratio`, so rows stay automatic.
+  getGridOptions() {
+    return { columns: 12, rows: 'auto', min_columns: 3 };
+  }
+
   connectedCallback() {
     // Only stream while the card is actually on screen. HA keeps cards of
     // inactive views in memory, which is how the iframe approach ended up
     // holding several live streams at once.
     this._observer = new IntersectionObserver((entries) => {
       this._visible = entries.some((e) => e.isIntersecting);
+      this._visibilityKnown = true;
       this._trace(`visible=${this._visible ? 1 : 0}`);
       this._syncPlayback();
     }, { threshold: 0.01 });
@@ -2183,10 +2196,26 @@ class ScryptedCameraCard extends HTMLElement {
     return this._visible && !document.hidden;
   }
 
-  // Pausing beats tearing down: the session survives a view switch, so coming
-  // back is instant instead of a fresh negotiation.
+  // By default (`stop_when_hidden`, on unless set to false) leaving the screen ends the
+  // stream, exactly like the stop button: a paused-but-open session kept the camera stream
+  // and its traffic running for as long as the page stayed open in another view, tab or
+  // app. Coming back shows the play button; only `autoplay` cards start again by
+  // themselves. With `stop_when_hidden: false` the old behaviour applies: playback is
+  // paused locally and the session survives, so coming back is instant.
   _syncPlayback() {
     const on = this._isVisible();
+    if (on && this._hiddenStopped) {
+      this._hiddenStopped = false;
+      if (this._config && this._config.autoplay) {
+        this._trace('visible again: autoplay restarts the stream');
+        this._onToggle();
+        return;
+      }
+    }
+    if (!on && this._shouldStopWhenHidden()) {
+      this._stopWhileHidden();
+      return;
+    }
     if (on && this._pendingRetry) {
       this._pendingRetry = false;
       this._retry();
@@ -2208,6 +2237,33 @@ class ScryptedCameraCard extends HTMLElement {
     // reading an empty input. Playback is paused locally instead.
     if (!on) this._video.pause();
     else this._resumePlayback();
+  }
+
+  _shouldStopWhenHidden() {
+    if (this._config && this._config.stop_when_hidden === false) return false;
+    // Before the IntersectionObserver has reported, "not visible" only means "not known
+    // yet"; stopping then would tear down an autoplay card's first connect on page load.
+    // A hidden document is known immediately and does count.
+    if (!this._visibilityKnown && !document.hidden) return false;
+    // Fullscreen is the opposite of leaving: the iPhone native player in particular can
+    // make the inline element report as not intersecting.
+    if (this._isFullscreen() || this._video.webkitDisplayingFullscreen) return false;
+    return true;
+  }
+
+  /** The stop button's path, minus the snapshot refresh nobody would see. */
+  _stopWhileHidden() {
+    if (this._hiddenStopping) return;
+    if (!this._session && !this._retryTimer && !this._pendingRetry) return;
+    this._hiddenStopping = true;
+    this._trace('hidden: stopping the stream');
+    this._stopped = true;
+    this._wantStream = false;
+    this._hiddenStopped = true;
+    this._cancelRetry();
+    this._stop({ resetOverlay: true })
+      .catch((err) => console.warn('[scrypted-card] stopping a hidden stream failed', err))
+      .finally(() => { this._hiddenStopping = false; });
   }
 
   /**
@@ -2469,4 +2525,5 @@ window.customCards.push({
   name: 'Scrypted Camera',
   description: 'Native WebRTC camera card with two-way audio, talking directly to Scrypted.',
   preview: false,
+  documentationURL: 'https://github.com/raphael1688dev/scrypted-camera-card#card-config',
 });

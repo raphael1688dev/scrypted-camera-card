@@ -88,6 +88,7 @@ const LABELS = {
   aspect_ratio: 'Aspect ratio',
   fit: 'Picture fit',
   autoplay: 'Start streaming immediately',
+  stop_when_hidden: 'Stop the stream when the card leaves the screen',
   destination: 'Stream',
   source: 'Scrypted add-on or integration entry',
   username: 'Scrypted username',
@@ -116,7 +117,7 @@ const STYLES = `
           border-radius: 4px;
           background: var(--secondary-background-color, rgba(0,0,0,.05));
           color: var(--primary-text-color, #212121);
-          font: 13px/1.5 var(--paper-font-body1_-_font-family, sans-serif); }
+          font: 13px/1.5 var(--ha-font-family-body, sans-serif); }
 `;
 
 /**
@@ -145,6 +146,7 @@ const buildSchema = (sources) => [
     },
   },
   { name: 'autoplay', selector: { boolean: {} } },
+  { name: 'stop_when_hidden', selector: { boolean: {} } },
   {
     name: 'destination',
     selector: {
@@ -341,6 +343,7 @@ class ScryptedCameraCardEditor extends HTMLElement {
       aspect_ratio: c.aspect_ratio || '',
       fit: c.fit === 'contain' ? 'contain' : 'cover',
       autoplay: !!c.autoplay,
+      stop_when_hidden: c.stop_when_hidden !== false,
       destination: c.destination || NO_DESTINATION,
       // The stand-in only where the field is a dropdown, because only a dropdown needs one.
       // Not filled in from a pre-0.5.0 `addon` either: the card does not read that key, so
@@ -380,6 +383,9 @@ class ScryptedCameraCardEditor extends HTMLElement {
     // Absent means the default, so `cover` is not written into the YAML.
     put(config, 'fit', value.fit === 'contain' ? 'contain' : '');
     put(config, 'autoplay', value.autoplay);
+    // On by default, so only `false` is written; put() would drop a false value.
+    if (value.stop_when_hidden === false) config.stop_when_hidden = false;
+    else delete config.stop_when_hidden;
     // Absent, never empty: an absent `destination` is what "Scrypted decides" means,
     // and the YAML should not carry a key the user did not set.
     put(config, 'destination', value.destination === NO_DESTINATION ? '' : value.destination);

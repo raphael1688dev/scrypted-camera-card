@@ -40,31 +40,38 @@ break this card. See _Known risks_ at the end.
 
 ## Install
 
-### HACS (recommended)
+### Marketplace (Home Assistant 2026.11 and later, recommended)
 
-Not in the default HACS store yet, so add it as a custom repository: HACS →
-three-dot menu → **Custom repositories** → this repository's URL, category
-**Dashboard**. Then install "Scrypted Camera Card" and reload the browser.
+Since 2026.11, HACS is built into Home Assistant as the **Marketplace**. Add this
+repository as a custom repository: Settings → Marketplace → **Add from link** → this
+repository's URL, type **Dashboard**. Then install "Scrypted Camera Card" and reload the
+browser. The Marketplace installs from the latest GitHub release and serves the card
+from `/local/community/scrypted-camera-card/`.
 
-On a **storage-mode** dashboard — the default, edited through the UI — HACS registers
-the Lovelace resource itself and there is nothing to add under Settings → Dashboards →
-Resources.
+On a **storage-mode** dashboard — the default, edited through the UI — the Marketplace
+registers the dashboard resource itself and there is nothing to add under Settings →
+Dashboards → Resources.
 
-On a **YAML-mode** dashboard HACS cannot register resources at all, so add it yourself
-in `configuration.yaml`:
+On a **YAML-mode** dashboard the Marketplace cannot add resources, so add it yourself in
+`configuration.yaml`:
 
 ```yaml
 lovelace:
   mode: yaml
   resources:
-    - url: /hacsfiles/scrypted-camera-card/scrypted-camera-card.js?v=0.1.0
+    - url: /local/community/scrypted-camera-card/scrypted-camera-card.js?v=0.5.9
       type: module
 ```
 
-Note the `?v=`. HACS appends its own cache-busting query when it registers a resource,
-and a hand-written entry gets none — so without it a browser or the Home Assistant
-service worker will keep serving the previous bundle after a HACS update, which looks
-exactly like the update not having worked. Bump the value whenever you update.
+Note the `?v=`. The Marketplace appends its own cache-busting query when it registers a
+resource, and a hand-written entry gets none — so without it a browser or the Home
+Assistant service worker will keep serving the previous bundle after an update, which
+looks exactly like the update not having worked. Bump the value whenever you update.
+
+On Home Assistant before 2026.11, HACS works the same way: HACS → three-dot menu →
+**Custom repositories**, category **Dashboard**; HACS served resources from
+`/hacsfiles/scrypted-camera-card/`. That path still works on 2026.11, but Home Assistant
+raises a repair asking to switch YAML resources to `/local/community/`.
 
 **To check which version a dashboard is actually running**, set `debug: true` and look at
 the top right corner of the card while it is not streaming: the version is printed there.
@@ -163,6 +170,7 @@ name: Eingang          # optional, shown in the control bar
 aspect_ratio: 16 / 9   # optional, shape of the card (not of the picture), any CSS aspect-ratio value
 fit: cover             # optional, cover (default, crop to fill) or contain - see below
 autoplay: false        # optional, default false - see below
+stop_when_hidden: true # optional, default true - stop the stream when the card leaves the screen
 # debug: true                # optional - shows the card's internal state while it is
                              # not streaming, see below
 # destination: low-resolution  # optional, see below
@@ -210,6 +218,14 @@ has been started - by autoplay or by the button - the card keeps trying to hold
 it, and self-healing resumes it after an add-on restart, a dropped websocket or a
 network outage regardless of this setting. Pressing stop is what revokes that
 intent.
+
+**`stop_when_hidden`** (default `true`): as soon as the card is no longer on screen —
+another view or dashboard, scrolled out of sight, another browser tab, the app in the
+background — the stream is stopped exactly as if stop had been pressed, so the camera
+stream and its traffic end with it. Coming back shows the play button; an `autoplay: true`
+card starts again by itself. Fullscreen does not count as leaving. Set it to `false` for
+the previous behaviour: playback is only paused off screen and the session stays open, so
+coming back is instant, at the cost of streaming for as long as the page stays open.
 
 **`username` / `password`** are optional, apply to the **ingress** route only, and do two
 different things depending on why you set them.
