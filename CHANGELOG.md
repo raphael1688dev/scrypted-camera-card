@@ -7,6 +7,15 @@ All notable changes to this card. Format per
 Entries are added once an implementation is verified — not when it is merely
 implemented. Version and date are filled in at release time.
 
+## [0.5.8] - 2026-11-10
+
+### Changed
+
+- **The version label is shown only with `debug: true`.** The `v0.5.x · integration` label in
+  the top right corner used to appear whenever the card was paused and read as a watermark over
+  the snapshot. It is now part of the debug output and follows `debug` as soon as the config
+  changes. Verified in a local test page.
+
 ## [0.5.7] - 2026-11-10
 
 ### Added
