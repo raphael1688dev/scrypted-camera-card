@@ -7,6 +7,19 @@ All notable changes to this card. Format per
 Entries are added once an implementation is verified — not when it is merely
 implemented. Version and date are filled in at release time.
 
+## [0.5.10] - 2026-11-10
+
+### Fixed
+
+- **Switching views no longer restarts the stream on return.** 0.5.9's `stop_when_hidden` did
+  not work for view switches: Home Assistant removes a view's cards from the page and puts them
+  back on return, so the card never saw itself leave, and when it was put back it resumed the
+  stream it had been playing. A removal longer than 1.5 s now counts as leaving the screen: the
+  card stays stopped on return, and `autoplay: true` cards start again once visible. A shorter
+  removal is a re-render and still resumes. Verified in a local test page that removes and
+  re-adds the card; 0.5.9 had passed a test page too and failed in Home Assistant, so this one
+  still needs checking there.
+
 ## [0.5.9] - 2026-11-10
 
 ### Fixed
