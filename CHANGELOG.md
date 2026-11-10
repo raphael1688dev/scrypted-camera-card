@@ -7,6 +7,16 @@ All notable changes to this card. Format per
 Entries are added once an implementation is verified — not when it is merely
 implemented. Version and date are filled in at release time.
 
+## [0.5.7] - 2026-11-10
+
+### Added
+
+- **`fit` option.** `aspect_ratio` sets the card's shape; `fit: contain` now shows the whole
+  picture inside it with black bars instead of cropping, e.g. a portrait (9:16) doorbell in a
+  16:9 card. The default stays `cover` (crop to fill), so existing cards look the same. Also
+  offered in the visual editor as "Picture fit". Verified in a local test page with a 9:16
+  picture; not yet checked with a live stream or in Home Assistant's card editor.
+
 ## [0.5.6] - 2026-11-10
 
 ### Added
