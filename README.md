@@ -160,7 +160,7 @@ copy that could be shipped in place of a fresh one.
 type: custom:scrypted-camera-card
 device: "121"          # Scrypted device id (as in /#/device/121) or its name
 name: Eingang          # optional, shown in the control bar
-aspect_ratio: 16 / 9   # optional, any CSS aspect-ratio value
+aspect_ratio: 16 / 9   # optional, shape of the card (not of the picture), any CSS aspect-ratio value
 fit: cover             # optional, cover (default, crop to fill) or contain - see below
 autoplay: false        # optional, default false - see below
 # debug: true                # optional - shows the card's internal state while it is
@@ -268,6 +268,10 @@ device: "107"
 aspect_ratio: 16 / 9
 fit: contain
 ```
+
+Set `aspect_ratio` to the shape you want the **card** to have, not to the camera's shape. If both
+have the same shape (say `aspect_ratio: 9 / 16` for a 9:16 camera), there is nothing to crop or
+pad, so `cover` and `contain` look identical and `fit` seems to do nothing.
 
 Fullscreen always shows the whole picture, whatever `fit` says.
 

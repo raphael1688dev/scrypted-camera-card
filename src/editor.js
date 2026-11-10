@@ -98,7 +98,7 @@ const HELPERS = {
   // The editor has no Scrypted connection - that exists only once the card runs - so
   // a typo cannot be caught here and surfaces on the card as `device "..." not found`.
   device: 'The id from the Scrypted URL (/#/device/121), or the camera name. Not checked here.',
-  aspect_ratio: 'Any CSS aspect-ratio value, for example 16 / 9.',
+  aspect_ratio: 'Shape of the card, not of the picture. Any CSS aspect-ratio value, for example 16 / 9.',
   fit: 'How a picture with another shape fills the card, e.g. a 9:16 camera in a 16:9 card.',
   // Shorter than it was, because the list now carries what the prose used to: with a
   // dropdown of real names there is no Name-versus-host confusion left to warn about. What
