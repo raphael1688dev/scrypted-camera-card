@@ -260,6 +260,23 @@ const STYLES = `
       pointer-events: none;
       z-index: ${Z_DEBUG};
     }
+  /* Fullscreen: the ha-card element itself goes fullscreen (see _onFullscreen()), so the
+     bar, spinner and messages come along. The configured aspect ratio is an inline style
+     on .wrap, hence !important; contain instead of cover so a screen with a different
+     ratio letterboxes rather than cropping the picture. Kept as separate rules from the
+     prefixed ones: one unknown pseudo-class in a selector list drops the whole rule. */
+  /* aria-pressed carries the state for screen readers, but red means "capturing or
+     sounding" in this bar; being fullscreen is neither. */
+  .bar button.fullscreen[aria-pressed="true"] { color: #fff; }
+  ha-card:fullscreen { width: 100vw; height: 100vh; border-radius: 0;
+                       display: flex; align-items: center; }
+  ha-card:fullscreen .wrap { aspect-ratio: auto !important; height: 100%; }
+  ha-card:fullscreen video, ha-card:fullscreen .poster { object-fit: contain; }
+  ha-card:-webkit-full-screen { width: 100vw; height: 100vh; border-radius: 0;
+                                display: flex; align-items: center; }
+  ha-card:-webkit-full-screen .wrap { aspect-ratio: auto !important; height: 100%; }
+  ha-card:-webkit-full-screen video,
+  ha-card:-webkit-full-screen .poster { object-fit: contain; }
 `;
 
 const ICON_PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
@@ -270,6 +287,9 @@ const ICON_MIC = '<svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 003-3V5a3 3 0 0
 // crossed-out microphone was tried and did not look good, so its state is colour only.
 const ICON_SOUND = '<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0014 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>';
 const ICON_MUTED = '<svg viewBox="0 0 24 24"><path d="M4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a9 9 0 003.69-1.81L19.73 21 21 19.73 4.27 3zM12 4L9.91 6.09 12 8.18V4zm7 8c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0021 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71z"/></svg>';
+// Same convention as the sound pair: the icon shows the action a press performs.
+const ICON_FULLSCREEN = '<svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>';
+const ICON_FULLSCREEN_EXIT = '<svg viewBox="0 0 24 24"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>';
 
 /**
  * Whether a failed hass.callWS() was a refusal rather than a fault. The distinction
@@ -389,6 +409,7 @@ class ScryptedCameraCard extends HTMLElement {
     this._debugTimer = null;
     this._onVisibility = () => this._syncPlayback();
     this._onOnline = () => this._onNetworkBack();
+    this._onFullscreenChange = () => this._syncFullscreen();
   }
 
   setConfig(config) {
@@ -477,6 +498,8 @@ class ScryptedCameraCard extends HTMLElement {
     document.addEventListener('visibilitychange', this._onVisibility);
     // Laptop woke up or wifi came back: don't sit out the remaining backoff.
     window.addEventListener('online', this._onOnline);
+    document.addEventListener('fullscreenchange', this._onFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', this._onFullscreenChange);
     if (this._hass && !this._started) this._start();
     // Also here, not only in _applyConfig(): Home Assistant can detach and re-attach a
     // card without calling setConfig() again, and an overlay whose timer died then shows
@@ -525,6 +548,7 @@ class ScryptedCameraCard extends HTMLElement {
             <span class="spacer"></span>
             <button class="speaker" title="Sound" aria-pressed="false" hidden>${ICON_MUTED}</button>
             <button class="mic" title="Talk" hidden></button>
+            <button class="fullscreen" title="Fullscreen" aria-pressed="false" hidden>${ICON_FULLSCREEN}</button>
           </div>
         </div>
       </ha-card>`;
@@ -540,10 +564,27 @@ class ScryptedCameraCard extends HTMLElement {
     this._label = this.shadowRoot.querySelector('.label');
     this._version = this.shadowRoot.querySelector('.version');
     this._debug = this.shadowRoot.querySelector('.debug');
+    this._card = this.shadowRoot.querySelector('ha-card');
+    this._fullscreen = this.shadowRoot.querySelector('.fullscreen');
 
     this._toggle.addEventListener('click', () => this._onToggle());
     this._mic.addEventListener('click', () => this._onMic());
     this._speaker.addEventListener('click', () => this._onSpeaker());
+    this._fullscreen.addEventListener('click', () => this._onFullscreen());
+    // Double-click on the picture toggles fullscreen too; clicks on the bar's own
+    // buttons are theirs.
+    this._wrap.addEventListener('dblclick', (e) => {
+      if (e.target.closest && e.target.closest('.bar')) return;
+      this._onFullscreen();
+    });
+    // iPhone: the native player ends on its own (swipe down / Done) and may leave the
+    // inline video paused; resume it the same way a visibility change does.
+    this._video.addEventListener('webkitendfullscreen', () => {
+      setTimeout(() => { if (this._control && this._isVisible()) this._resumePlayback(); }, 500);
+    });
+    // Hidden when the browser offers neither way into fullscreen (e.g. an embedded
+    // webview that does not implement it), so there is no button that does nothing.
+    this._fullscreen.hidden = this._fullscreenMode() === null;
 
     // Both buttons' initial look comes from the same writer as every later one, so the
     // markup above cannot disagree with it. Nothing can paint in between.
@@ -2183,6 +2224,62 @@ class ScryptedCameraCard extends HTMLElement {
     if (!this._video.muted) this._resumePlayback();
   }
 
+  /**
+   * Which way into fullscreen this browser offers, or null for none:
+   * - 'element': the Fullscreen API on the ha-card, so the bar (talk, sound) stays usable.
+   *   Desktop browsers, Android, iPad.
+   * - 'video': iPhone Safari has no element fullscreen, only the native player through
+   *   video.webkitEnterFullscreen(). The card's own controls are not shown there.
+   */
+  _fullscreenMode() {
+    const card = this._card;
+    const enabled = document.fullscreenEnabled || document.webkitFullscreenEnabled;
+    if (enabled && (card.requestFullscreen || card.webkitRequestFullscreen)) return 'element';
+    if (typeof this._video.webkitEnterFullscreen === 'function') return 'video';
+    return null;
+  }
+
+  _isFullscreen() {
+    // Inside a shadow tree the fullscreen element is retargeted: the shadow root reports
+    // the ha-card itself, the document reports this host.
+    const inner = this.shadowRoot.fullscreenElement || this.shadowRoot.webkitFullscreenElement;
+    if (inner) return inner === this._card;
+    return (document.fullscreenElement || document.webkitFullscreenElement) === this;
+  }
+
+  async _onFullscreen() {
+    const mode = this._fullscreenMode();
+    try {
+      if (mode === 'element') {
+        if (this._isFullscreen()) {
+          await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        } else {
+          await (this._card.requestFullscreen || this._card.webkitRequestFullscreen).call(this._card);
+        }
+      } else if (mode === 'video') {
+        this._video.webkitEnterFullscreen();
+      }
+    } catch (err) {
+      this._trace(`fullscreen failed: ${(err && err.message) || err}`);
+    }
+  }
+
+  _syncFullscreen() {
+    const on = this._isFullscreen();
+    this._fullscreen.innerHTML = on ? ICON_FULLSCREEN_EXIT : ICON_FULLSCREEN;
+    this._fullscreen.setAttribute('aria-pressed', String(on));
+    this._fullscreen.title = on ? 'Exit fullscreen' : 'Fullscreen';
+    // Phones: a 16:9 picture fullscreen in portrait is barely larger than the card, so
+    // ask for landscape. Only allowed while fullscreen (Android Chrome); refused
+    // everywhere else, which is fine.
+    const orientation = screen.orientation;
+    if (on && orientation && orientation.lock && matchMedia('(pointer: coarse)').matches) {
+      orientation.lock('landscape').catch(() => {});
+    } else if (!on && orientation && orientation.unlock) {
+      try { orientation.unlock(); } catch { /* not locked */ }
+    }
+  }
+
   _syncSpeaker() {
     const on = !this._video.muted;
     // Icon and aria-pressed from the one state, in the one place: the crossed-out
@@ -2308,6 +2405,8 @@ class ScryptedCameraCard extends HTMLElement {
     if (this._observer) { this._observer.disconnect(); this._observer = null; }
     document.removeEventListener('visibilitychange', this._onVisibility);
     window.removeEventListener('online', this._onOnline);
+    document.removeEventListener('fullscreenchange', this._onFullscreenChange);
+    document.removeEventListener('webkitfullscreenchange', this._onFullscreenChange);
     this._cancelRetry();
     this._clearTimer('_reconfigureTimer');
     // Ordered on purpose: _stop() ends the RTC session, which is what releases

@@ -251,6 +251,20 @@ It is not offered in the visual editor, deliberately: it is an instrument, not a
 switch that turns a camera into a wall of text is one nobody should find by accident. The editor
 does preserve it — an unknown key survives a visit — so setting it in YAML sticks.
 
+### Fullscreen
+
+The button at the right end of the control bar, or a double-click on the picture, toggles
+fullscreen. There is nothing to configure.
+
+- **Desktop browsers, Android, iPad:** the whole card goes fullscreen, so sound and talk stay
+  usable. The configured `aspect_ratio` is ignored while fullscreen and the picture is
+  letterboxed (`object-fit: contain`) instead of cropped. On phones the card asks for landscape
+  orientation; browsers that do not allow it simply stay as they are.
+- **iPhone:** Safari offers no element fullscreen, only its native video player, so the picture
+  opens there and the card's own controls (talk, sound) are not available until you leave it.
+- The button is hidden when the browser offers neither, for example an embedded webview that
+  does not implement fullscreen.
+
 ### Why there is no `base_url`
 
 Pointing the card straight at `https://scrypted.local:10443` looks like the obvious option and
