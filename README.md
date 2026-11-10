@@ -160,6 +160,7 @@ type: custom:scrypted-camera-card
 device: "121"          # Scrypted device id (as in /#/device/121) or its name
 name: Eingang          # optional, shown in the control bar
 aspect_ratio: 16 / 9   # optional, any CSS aspect-ratio value
+fit: cover             # optional, cover (default, crop to fill) or contain - see below
 autoplay: false        # optional, default false - see below
 # debug: true                # optional - shows the card's internal state while it is
                              # not streaming, see below
@@ -250,6 +251,24 @@ otherwise recover it.
 It is not offered in the visual editor, deliberately: it is an instrument, not a feature, and a
 switch that turns a camera into a wall of text is one nobody should find by accident. The editor
 does preserve it — an unknown key survives a visit — so setting it in YAML sticks.
+
+### `fit`
+
+`aspect_ratio` sets the shape of the card; `fit` decides what happens when the picture has a
+different shape:
+
+- **`cover`** (default): the picture fills the card and the overflow is cropped.
+- **`contain`**: the whole picture is shown, with black bars. For example, a portrait (9:16)
+  doorbell in a 16:9 card:
+
+```yaml
+type: custom:scrypted-camera-card
+device: "107"
+aspect_ratio: 16 / 9
+fit: contain
+```
+
+Fullscreen always shows the whole picture, whatever `fit` says.
 
 ### Fullscreen
 

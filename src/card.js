@@ -265,6 +265,10 @@ const STYLES = `
      on .wrap, hence !important; contain instead of cover so a screen with a different
      ratio letterboxes rather than cropping the picture. Kept as separate rules from the
      prefixed ones: one unknown pseudo-class in a selector list drops the whole rule. */
+  /* fit: contain shows the whole picture inside the configured aspect ratio, e.g. a
+     portrait (9:16) camera in a 16:9 card, with black bars instead of cropping. A class
+     rather than an inline style, so the fullscreen rules below still apply on top. */
+  ha-card.fit-contain video, ha-card.fit-contain .poster { object-fit: contain; }
   /* aria-pressed carries the state for screen readers, but red means "capturing or
      sounding" in this bar; being fullscreen is neither. */
   .bar button.fullscreen[aria-pressed="true"] { color: #fff; }
@@ -600,6 +604,8 @@ class ScryptedCameraCard extends HTMLElement {
     // value leaves the previous ratio in place, which is also what keeps the box from
     // collapsing while a new one is half typed.
     this._wrap.style.aspectRatio = this._config.aspect_ratio;
+    // Only `contain` changes anything; any other value keeps the default crop-to-fill.
+    this._card.classList.toggle('fit-contain', this._config.fit === 'contain');
     this._label.textContent = this._config.name || '';
     this._syncDebug();
   }

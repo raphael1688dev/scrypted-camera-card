@@ -86,6 +86,7 @@ const LABELS = {
   device: 'Scrypted device id or name',
   name: 'Name',
   aspect_ratio: 'Aspect ratio',
+  fit: 'Picture fit',
   autoplay: 'Start streaming immediately',
   destination: 'Stream',
   source: 'Scrypted add-on or integration entry',
@@ -98,6 +99,7 @@ const HELPERS = {
   // a typo cannot be caught here and surfaces on the card as `device "..." not found`.
   device: 'The id from the Scrypted URL (/#/device/121), or the camera name. Not checked here.',
   aspect_ratio: 'Any CSS aspect-ratio value, for example 16 / 9.',
+  fit: 'How a picture with another shape fills the card, e.g. a 9:16 camera in a 16:9 card.',
   // Shorter than it was, because the list now carries what the prose used to: with a
   // dropdown of real names there is no Name-versus-host confusion left to warn about. What
   // remains is what "Automatic" means and the one thing the field cannot show - that
@@ -130,6 +132,18 @@ const buildSchema = (sources) => [
   { name: 'device', required: true, selector: { text: {} } },
   { name: 'name', selector: { text: {} } },
   { name: 'aspect_ratio', selector: { text: {} } },
+  {
+    name: 'fit',
+    selector: {
+      select: {
+        mode: 'dropdown',
+        options: [
+          { value: 'cover', label: 'Fill the card (crop)' },
+          { value: 'contain', label: 'Whole picture (black bars)' },
+        ],
+      },
+    },
+  },
   { name: 'autoplay', selector: { boolean: {} } },
   {
     name: 'destination',
@@ -325,6 +339,7 @@ class ScryptedCameraCardEditor extends HTMLElement {
       device: c.device || '',
       name: c.name || '',
       aspect_ratio: c.aspect_ratio || '',
+      fit: c.fit === 'contain' ? 'contain' : 'cover',
       autoplay: !!c.autoplay,
       destination: c.destination || NO_DESTINATION,
       // The stand-in only where the field is a dropdown, because only a dropdown needs one.
@@ -362,6 +377,8 @@ class ScryptedCameraCardEditor extends HTMLElement {
     config.device = value.device || '';
     put(config, 'name', value.name);
     put(config, 'aspect_ratio', value.aspect_ratio);
+    // Absent means the default, so `cover` is not written into the YAML.
+    put(config, 'fit', value.fit === 'contain' ? 'contain' : '');
     put(config, 'autoplay', value.autoplay);
     // Absent, never empty: an absent `destination` is what "Scrypted decides" means,
     // and the YAML should not carry a key the user did not set.
