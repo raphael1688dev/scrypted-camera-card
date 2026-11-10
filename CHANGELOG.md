@@ -7,6 +7,18 @@ All notable changes to this card. Format per
 Entries are added once an implementation is verified — not when it is merely
 implemented. Version and date are filled in at release time.
 
+## [0.5.6-beta.1] - 2026-11-10
+
+Prerelease for testing on real devices; not yet verified there.
+
+### Added
+
+- **Fullscreen.** A button at the right end of the control bar, or a double-click on the
+  picture, toggles fullscreen. Desktop browsers, Android and iPad put the whole card
+  fullscreen, so sound and talk stay usable; the picture is letterboxed instead of cropped and
+  phones ask for landscape. iPhone Safari has no element fullscreen and opens its native
+  player instead. The button is hidden where the browser offers neither.
+
 ## [0.5.5] - 2026-08-24
 
 ### Added
