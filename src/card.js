@@ -61,6 +61,8 @@ const ESCALATE_AFTER_RETRIES = 3;
 // words on screen by then.
 const REBUILD_AFTER_RETRIES = 5;
 const DISCONNECT_GRACE = 5000;    // ICE usually heals itself, give it a moment
+// A detach shorter than this is Home Assistant re-rendering, not the user leaving.
+const REATTACH_GRACE = 1500;
 const STABLE_AFTER = 30000;       // a connection this old counts as healthy
 const WATCHDOG_INTERVAL = 5000;
 const WATCHDOG_STALL = 15000;     // no new frames for this long - stream is dead
@@ -343,6 +345,10 @@ class ScryptedCameraCard extends HTMLElement {
     // stop of that kind is in flight. See _stopWhileHidden().
     this._hiddenStopped = false;
     this._hiddenStopping = false;
+    // When the card was last removed from the DOM and whether a stream was running then.
+    // See disconnectedCallback() and _applyReattachRule().
+    this._detachedAt = 0;
+    this._detachedWanting = false;
     this._client = null;
     this._clientDead = false;
     this._session = null;
@@ -517,6 +523,7 @@ class ScryptedCameraCard extends HTMLElement {
     window.addEventListener('online', this._onOnline);
     document.addEventListener('fullscreenchange', this._onFullscreenChange);
     document.addEventListener('webkitfullscreenchange', this._onFullscreenChange);
+    this._applyReattachRule();
     if (this._hass && !this._started) this._start();
     // Also here, not only in _applyConfig(): Home Assistant can detach and re-attach a
     // card without calling setConfig() again, and an overlay whose timer died then shows
@@ -526,7 +533,33 @@ class ScryptedCameraCard extends HTMLElement {
   }
 
   disconnectedCallback() {
+    // Switching views removes the card from the DOM and puts it back on return, so the
+    // IntersectionObserver never sees it leave. _teardown() ends the session but keeps
+    // _wantStream, which made _start() play again the moment the card came back. Remember
+    // that a stream was running; _applyReattachRule() decides on return.
+    this._detachedAt = Date.now();
+    this._detachedWanting = this._wantStream && !this._stopped;
     this._teardown();
+  }
+
+  /**
+   * On re-attach after a detach that lasted longer than REATTACH_GRACE, a stream that was
+   * running counts as stopped by leaving the screen (see `stop_when_hidden`): the play button
+   * shows, and only an `autoplay` card starts again once it is visible. A shorter detach is a
+   * re-render rather than navigation and keeps the old behaviour of resuming.
+   */
+  _applyReattachRule() {
+    const at = this._detachedAt;
+    const wanting = this._detachedWanting;
+    this._detachedAt = 0;
+    this._detachedWanting = false;
+    if (!at || !wanting) return;
+    if (this._config && this._config.stop_when_hidden === false) return;
+    if (Date.now() - at < REATTACH_GRACE) return;
+    this._trace('re-attached after leaving: stream stays stopped');
+    this._stopped = true;
+    this._wantStream = false;
+    this._hiddenStopped = true;
   }
 
   // --- rendering ----------------------------------------------------------
