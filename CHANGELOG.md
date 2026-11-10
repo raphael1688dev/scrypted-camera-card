@@ -7,9 +7,7 @@ All notable changes to this card. Format per
 Entries are added once an implementation is verified — not when it is merely
 implemented. Version and date are filled in at release time.
 
-## [0.5.6-beta.1] - 2026-11-10
-
-Prerelease for testing on real devices; not yet verified there.
+## [0.5.6] - 2026-11-10
 
 ### Added
 
@@ -18,6 +16,7 @@ Prerelease for testing on real devices; not yet verified there.
   fullscreen, so sound and talk stay usable; the picture is letterboxed instead of cropped and
   phones ask for landscape. iPhone Safari has no element fullscreen and opens its native
   player instead. The button is hidden where the browser offers neither.
+  Verified in desktop Chrome; the iPhone native-player path has not been tested on a device yet.
 
 ## [0.5.5] - 2026-08-24
 
